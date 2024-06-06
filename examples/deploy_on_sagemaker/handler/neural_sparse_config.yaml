@@ -1,0 +1,3 @@
+batchSize: 16
+maxBatchDelay: 10
+responseTimeout: 300

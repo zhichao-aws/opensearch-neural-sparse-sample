@@ -1,0 +1,10 @@
+{
+  "runtime": "python",
+  "model": {
+    "modelName": "neuralsparse",
+    "handler": "neural_sparse_handler.py",
+    "modelVersion": "1.0",
+    "configFile": "neural_sparse_config.yaml"
+  },
+  "archiverVersion": "0.9.0"
+}
