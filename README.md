@@ -1,5 +1,7 @@
 # opensearch-neural-sparse-sample
-Containing sample codes to trace/deploy/fine-tuning neural sparse model for opensearch using [PyTorch](https://pytorch.org/) and [transformers](https://github.com/huggingface/transformers) API
+Containing sample codes to trace/deploy neural sparse model for opensearch using [PyTorch](https://pytorch.org/) and [transformers](https://github.com/huggingface/transformers) API.
+
+For fine-tuning, please check the repo https://github.com/zhichao-aws/opensearch-sparse-model-tuning-sample.
 
 ## What we have now
 - code sample to deploy a neural sparse model on SageMaker that can be accessed via OpenSearch connector
@@ -7,7 +9,6 @@ Containing sample codes to trace/deploy/fine-tuning neural sparse model for open
     - combined with chunking processor
 
 ## Todos
-- code sample to fine-tuning neural sparse model
 - code sample to trace a neural model that can be uploaded to OpenSearch cluster
 - code sample to create an index for neural sparse then do ingest and search
     - combined with dense model to do hybrid search
