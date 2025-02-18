@@ -12,7 +12,7 @@ import torch
 import transformers
 from ts.torch_handler.base_handler import BaseHandler
 
-model_id = "opensearch-project/opensearch-neural-sparse-encoding-v1"
+model_id = "opensearch-project/opensearch-neural-sparse-encoding-doc-v2-distill"
 
 class SparseEncodingModelHandler(BaseHandler):
     class SparseModel(torch.nn.Module):
