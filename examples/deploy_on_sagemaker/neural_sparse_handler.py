@@ -16,10 +16,8 @@ model_id = "cross-encoder/ms-marco-MiniLM-L6-v2"
 max_bs = 50
 
 def merge_features(query_features, doc_features, sep_token_id=102, max_length=256):
-    # 查询部分
     q_input_ids = query_features["input_ids"]      # [B, query_seq_len]
     q_attention = query_features["attention_mask"]   # [B, query_seq_len]
-    # 文档部分
     d_input_ids = doc_features["input_ids"]          # [B, doc_seq_len]
     d_attention = doc_features["attention_mask"]       # [B, doc_seq_len]
     
@@ -27,22 +25,18 @@ def merge_features(query_features, doc_features, sep_token_id=102, max_length=25
     q_seq_len = q_input_ids.size(1)
     d_seq_len = d_input_ids.size(1)
     
-    # 创建 [SEP] 标记及其 attention_mask
     sep_tensor = torch.full((batch_size, 1), sep_token_id, dtype=q_input_ids.dtype, device=q_input_ids.device)
     sep_attention = torch.ones((batch_size, 1), dtype=q_attention.dtype, device=q_attention.device)
     
-    # 拼接
     merged_input_ids = torch.cat([q_input_ids, sep_tensor, d_input_ids], dim=1)
     merged_attention = torch.cat([q_attention, sep_attention, d_attention], dim=1)
     
-    # 构造 token_type_ids: 查询为 0，文档为 1，分隔符设为 0（可根据需要调整）
     q_token_type_ids = torch.zeros((batch_size, q_seq_len), dtype=q_input_ids.dtype, device=q_input_ids.device)
     sep_token_type_ids = torch.zeros((batch_size, 1), dtype=q_input_ids.dtype, device=q_input_ids.device)
     d_token_type_ids = torch.ones((batch_size, d_seq_len), dtype=q_input_ids.dtype, device=q_input_ids.device)
     
     merged_token_type_ids = torch.cat([q_token_type_ids, sep_token_type_ids, d_token_type_ids], dim=1)
     
-    # 截断至 max_length
     if merged_input_ids.size(1) > max_length:
         merged_input_ids = merged_input_ids[:, :max_length]
         merged_attention = merged_attention[:, :max_length]
@@ -126,45 +120,54 @@ class CrossEncoderEncodingModelHandler(BaseHandler):
             "attention_mask": torch.cat([x["attention_mask"].unsqueeze(0) for x in doc_features], dim=0).to(self.device),
         }
 
-        # 拼接 query + [SEP] + doc
-        merged = merge_features(query_input, doc_input, sep_token_id=self.tokenizer.sep_token_id, max_length=256)
 
-        return {"input": merged, "batch_l": batch_idx}
+        return {"input": [query_input,doc_input], "batch_l": batch_idx}
 
 
     def inference(self, data, *args, **kwargs):
         batch_idx = data["batch_l"]
-        data_input = data["input"]
+        query_input = data["input"][0]
+        doc_input = data["input"][1]
 
-        total_samples = data_input["input_ids"].shape[0]
+        total_samples = query_input["input_ids"].shape[0]
         outputs = []
 
         for start_idx in range(0, total_samples, max_bs):
             end_idx = min(start_idx + max_bs, total_samples)
 
-            batch_data = {
-                "input_ids": data_input["input_ids"][start_idx:end_idx],
-                "attention_mask": data_input["attention_mask"][start_idx:end_idx],
+            q_batch_data = {
+                "input_ids": query_input["input_ids"][start_idx:end_idx],
+                "attention_mask": query_input["attention_mask"][start_idx:end_idx],
+            }
+            d_batch_data = {
+                "input_ids": doc_input["input_ids"][start_idx:end_idx],
+                "attention_mask": doc_input["attention_mask"][start_idx:end_idx],
             }
 
             with torch.cuda.amp.autocast(), torch.no_grad():
                 batch_output = []
-                input_ids = batch_data['input_ids']
-                attention_mask = batch_data['attention_mask']
-                for i in range(input_ids.size(0)):  # batch_size 是 input_ids 的第一个维度
+                q_input_ids = q_batch_data['input_ids']
+                q_attention_mask = q_batch_data['attention_mask']
+                d_input_ids = d_batch_data['input_ids']
+                d_attention_mask = d_batch_data['attention_mask']
+                for i in range(q_input_ids.size(0)):  
                     # 获取当前样本的 input_ids 和 attention_mask
-                    sample_input_ids = input_ids[i].unsqueeze(0)  # 形状变为 [1, seq_len]
-                    sample_attention_mask = attention_mask[i].unsqueeze(0)  # 形状变为 [1, seq_len]
+                    q_sample_input_ids = q_input_ids[i].unsqueeze(0)  # 形状变为 [1, seq_len]
+                    q_sample_attention_mask = q_attention_mask[i].unsqueeze(0)
+                    d_sample_input_ids = d_input_ids[i].unsqueeze(0)  # 形状变为 [1, seq_len]
+                    d_sample_attention_mask = d_attention_mask[i].unsqueeze(0)
                     
                     # 根据 attention_mask 去除填充部分
-                    effective_input_ids = sample_input_ids[sample_attention_mask == 1]
-                    effective_attention_mask = sample_attention_mask[sample_attention_mask == 1]
-                    
-                    # 生成新的 batch_data，只包含有效的部分
-                    sample_batch_data = {
-                        'input_ids': effective_input_ids,
-                        'attention_mask': effective_attention_mask
-                    }
+                    q_effective_input_ids = q_sample_input_ids[q_sample_attention_mask == 1]
+                    q_effective_attention_mask = q_sample_attention_mask[q_sample_attention_mask == 1]
+                    d_effective_input_ids = d_sample_input_ids[d_sample_attention_mask == 1]
+                    d_effective_attention_mask = d_sample_attention_mask[d_sample_attention_mask == 1]
+
+                    sample_batch_data = merge_features(
+                        {"input_ids": q_effective_input_ids, "attention_mask": q_effective_attention_mask},
+                        {"input_ids": d_effective_input_ids, "attention_mask": d_effective_attention_mask}
+                    )
+
                     with torch.cuda.amp.autocast(), torch.no_grad():
                         # 获取模型的输出
                         output = self.model(**sample_batch_data)
